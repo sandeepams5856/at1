@@ -1,0 +1,12 @@
+# Render.com blueprint: hosts at1 at a fixed https://<name>.onrender.com link,
+# so the dashboard opens from a phone anywhere without the PC being on.
+services:
+  - type: web
+    name: at1
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.13.1"

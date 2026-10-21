@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>at1 - NSE / BSE buy & sell signals</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<!-- data-palette / data-mode let the dataviz palette validator run against this
+     page's actual series colours if it is ever loaded as a module script. -->
+<body data-palette="#3987e5,#d95926,#d55181,#9085e9" data-mode="dark">
+
+<div id="app">
+  <header>
+    <div class="brand">at1<span>NSE / BSE signal desk</span></div>
+
+    <div id="instrument">
+      <div>
+        <div class="name" id="inst-name">Loading…</div>
+        <div class="sym" id="inst-sym"></div>
+      </div>
+      <div>
+        <div class="ltp" id="inst-ltp">—</div>
+        <div class="chg" id="inst-chg"></div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div class="tf-row" id="timeframes" role="group" aria-label="Timeframe"></div>
+    <button class="ghost-btn" id="btn-refresh" title="Re-fetch from the feed">Refresh</button>
+    <label class="ghost-btn" style="display:inline-flex;gap:6px;align-items:center;cursor:pointer">
+      <input type="checkbox" id="auto-refresh" style="margin:0"> Auto 5m
+    </label>
+    <button class="ghost-btn" id="btn-theme">Light</button>
+  </header>
+
+  <!-- ============ main: chart view ============ -->
+  <main>
+    <div id="alert-slot"></div>
+
+    <section id="view-chart">
+      <div class="verdict-card" id="verdict-card" data-tone="hold">
+        <div class="verdict-main">
+          <span class="verdict-glyph" id="verdict-glyph">●</span>
+          <span class="verdict-label" id="verdict-label">—</span>
+        </div>
+        <div class="verdict-score">
+          composite score <strong id="verdict-score">—</strong> <span id="verdict-cov"></span>
+        </div>
+        <div class="tally">
+          <div><span class="chip" data-sig="Buy">▲ Buy</span> <b id="tally-buy">0</b></div>
+          <div><span class="chip" data-sig="Sell">▼ Sell</span> <b id="tally-sell">0</b></div>
+          <div><span class="chip" data-sig="Neutral">● Neutral</span> <b id="tally-neutral">0</b></div>
+        </div>
+        <div class="score-meter">
+          <div class="track"><div class="needle" id="score-needle" style="left:50%"></div></div>
+          <div class="scale"><span>−100 sell</span><span>0</span><span>buy +100</span></div>
+        </div>
+      </div>
+
+      <div class="pane-toggles" id="pane-toggles">
+        <label><input type="checkbox" data-series="ema9" checked> EMA 9</label>
+        <label><input type="checkbox" data-series="ema21" checked> EMA 21</label>
+        <label><input type="checkbox" data-series="ema50" checked> EMA 50</label>
+        <label><input type="checkbox" data-series="ema200" checked> EMA 200</label>
+        <label><input type="checkbox" data-series="vwap" checked> VWAP</label>
+        <label><input type="checkbox" data-series="bb"> Bollinger</label>
+        <label><input type="checkbox" data-series="supertrend"> Supertrend</label>
+        <label><input type="checkbox" data-series="markers" checked> Buy / sell arrows</label>
+      </div>
+
+      <div class="panes">
+        <figure class="pane">
+          <figcaption>
+            <span class="title">Price</span>
+            <div class="legend" id="legend-price"></div>
+          </figcaption>
+          <div class="chart-host" id="chart-price" style="height:392px"></div>
+        </figure>
+
+        <figure class="pane">
+          <figcaption>
+            <span class="title">Volume</span>
+            <div class="legend" id="legend-volume"></div>
+          </figcaption>
+          <div class="chart-host" id="chart-volume" style="height:128px"></div>
+        </figure>
+
+        <figure class="pane">
+          <figcaption>
+            <span class="title">RSI 14</span>
+            <div class="legend" id="legend-rsi"></div>
+          </figcaption>
+          <div class="chart-host" id="chart-rsi" style="height:128px"></div>
+        </figure>
+
+        <figure class="pane">
+          <figcaption>
+            <span class="title">MACD 12 / 26 / 9</span>
+            <div class="legend" id="legend-macd"></div>
+          </figcaption>
+          <div class="chart-host" id="chart-macd" style="height:128px"></div>
+        </figure>
+
+        <figure class="pane">
+          <figcaption>
+            <span class="title">Composite signal score</span>
+            <div class="legend" id="legend-score"></div>
+          </figcaption>
+          <div class="chart-host" id="chart-score" style="height:118px"></div>
+        </figure>
+      </div>
+
+      <div class="cards">
+        <div class="card">
+          <h2>Trade plan (ATR based)</h2>
+          <dl class="kv" id="plan-kv"></dl>
+        </div>
+
+        <div class="card">
+          <h2>What just happened</h2>
+          <ul class="event-list" id="event-list"></ul>
+        </div>
+
+        <div class="card">
+          <h2>Signal drivers</h2>
+          <ul class="event-list" id="driver-list"></ul>
+        </div>
+
+        <div class="card wide">
+          <h2>All measures <span id="measure-count" style="color:var(--text-muted);font-weight:400"></span></h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Indicator</th><th class="num">Value</th><th>Reading</th>
+                <th class="num">Score</th><th style="width:90px">Contribution</th><th class="num">Weight</th>
+              </tr>
+            </thead>
+            <tbody id="measure-body"></tbody>
+          </table>
+        </div>
+
+        <div class="card wide">
+          <h2>Last 20 bars (table view)</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Time (IST)</th><th class="num">Open</th><th class="num">High</th>
+                <th class="num">Low</th><th class="num">Close</th><th class="num">Volume</th>
+                <th class="num">Score</th>
+              </tr>
+            </thead>
+            <tbody id="bars-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ main: options view ============ -->
+    <section id="view-options" hidden>
+      <div id="oc-alert"></div>
+
+      <div class="verdict-card" id="oc-verdict" data-tone="hold">
+        <div class="verdict-main">
+          <span class="verdict-glyph" id="oc-glyph">●</span>
+          <span class="verdict-label" id="oc-label">—</span>
+        </div>
+        <div class="verdict-score" id="oc-source"></div>
+        <div class="spacer"></div>
+        <div class="verdict-score" id="oc-stamp"></div>
+      </div>
+
+      <div class="oc-head">
+        <strong id="oc-name" style="font-size:15px"></strong>
+        <label>Expiry
+          <select id="oc-expiry"></select>
+        </label>
+        <label>Strikes each side
+          <select id="oc-window">
+            <option value="6">6</option>
+            <option value="10" selected>10</option>
+            <option value="15">15</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="stat-row" id="oc-stats"></div>
+
+      <!-- Target planner: type a contract in, read back where the target could go.
+           Read-only like the rest of the app - it prices targets, it cannot send one. -->
+      <div class="cards" style="margin-top:0">
+        <div class="card wide">
+          <h2>Target planner <span id="tp-sub" style="color:var(--text-muted);font-weight:400"></span></h2>
+
+          <div class="tp-form">
+            <label>Strike
+              <select id="tp-strike"></select>
+            </label>
+            <label>Leg
+              <select id="tp-leg">
+                <option value="CE">CE (call)</option>
+                <option value="PE">PE (put)</option>
+              </select>
+            </label>
+            <label>Entry premium
+              <input id="tp-premium" type="number" min="0.05" step="0.05" placeholder="chain LTP">
+            </label>
+            <label>Stop, % of premium
+              <input id="tp-stop" type="number" min="1" max="90" step="1" value="25">
+            </label>
+            <label>Quantity (units)
+              <input id="tp-qty" type="number" min="1" step="1" value="1">
+            </label>
+            <label>Give it how long
+              <select id="tp-horizon"></select>
+            </label>
+            <button class="ghost-btn" id="tp-go">Plan targets</button>
+          </div>
+
+          <div class="stat-row" id="tp-stats"></div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Reward:risk</th>
+                <th class="num">Target premium</th>
+                <th class="num">Move needed</th>
+                <th class="num">Gain</th>
+                <th class="num">Spot needed</th>
+                <th class="num">Spot move</th>
+                <th class="num">Spot needed late</th>
+                <th class="num">Volume traded there</th>
+                <th class="num">At that strike</th>
+                <th class="num">Reached first</th>
+                <th class="num">IV chance</th>
+              </tr>
+            </thead>
+            <tbody id="tp-body"></tbody>
+          </table>
+
+          <h2 style="margin-top:14px">Read this with the numbers</h2>
+          <ul class="event-list" id="tp-notes"></ul>
+        </div>
+
+        <div class="card wide" id="tp-profile-card" hidden>
+          <h2>Where spot has actually traded <span id="tp-profile-sub" style="color:var(--text-muted);font-weight:400"></span></h2>
+          <table>
+            <thead>
+              <tr>
+                <th class="num">Price band</th>
+                <th style="width:150px">Volume</th>
+                <th class="num">Contracts</th>
+                <th class="num">Share</th>
+                <th>Your levels</th>
+              </tr>
+            </thead>
+            <tbody id="tp-profile-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="cards" style="margin-top:0">
+        <div class="card">
+          <h2>Suggested option trade</h2>
+          <div id="oc-suggestion"></div>
+        </div>
+        <div class="card">
+          <h2>What the chain says</h2>
+          <ul class="event-list" id="oc-notes"></ul>
+        </div>
+        <div class="card wide">
+          <h2>Option chain <span id="oc-sub" style="color:var(--text-muted);font-weight:400"></span></h2>
+          <table>
+            <thead>
+              <tr>
+                <th colspan="5" style="text-align:center;color:var(--critical)">CALLS (CE)</th>
+                <th class="num">Strike</th>
+                <th colspan="5" style="text-align:center;color:var(--good)">PUTS (PE)</th>
+              </tr>
+              <tr>
+                <th class="num">OI</th><th class="num">Chg OI</th><th class="num">IV</th>
+                <th class="num">LTP</th><th>Buildup</th>
+                <th class="num"></th>
+                <th>Buildup</th><th class="num">LTP</th><th class="num">IV</th>
+                <th class="num">Chg OI</th><th class="num">OI</th>
+              </tr>
+            </thead>
+            <tbody id="oc-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ main: option bench ============ -->
+    <!-- Add contracts, price them all on one stop and one horizon, and read ITM
+         against ATM against OTM. Same read-only rule as everywhere else. -->
+    <section id="view-bench" hidden>
+      <div id="bn-alert"></div>
+
+      <div class="oc-head">
+        <strong id="bn-name" style="font-size:15px"></strong>
+        <label>Expiry
+          <select id="bn-expiry"></select>
+        </label>
+      </div>
+
+      <div class="stat-row" id="bn-stats"></div>
+
+      <div class="cards" style="margin-top:0">
+        <div class="card wide">
+          <h2>The bench <span id="bn-sub" style="color:var(--text-muted);font-weight:400"></span></h2>
+
+          <div class="tp-form">
+            <label>Strike
+              <select id="bn-strike"></select>
+            </label>
+            <label>Leg
+              <select id="bn-leg">
+                <option value="CE">CE (call)</option>
+                <option value="PE">PE (put)</option>
+              </select>
+            </label>
+            <button class="ghost-btn" id="bn-add">Add this contract</button>
+            <button class="ghost-btn" id="bn-ladder">Add the ITM / ATM / OTM ladder</button>
+            <button class="ghost-btn" id="bn-clear">Clear the bench</button>
+          </div>
+
+          <p class="tp-hint">These four apply to <b>every</b> row — one stop, one size, one
+            horizon, one reward:risk. That is what makes the columns comparable.</p>
+
+          <div class="tp-form">
+            <label>Stop, % of premium
+              <input id="bn-stop" type="number" min="1" max="90" step="1" value="25">
+            </label>
+            <label>Quantity (units)
+              <input id="bn-qty" type="number" min="1" step="1" value="1">
+            </label>
+            <label>Give it how long
+              <select id="bn-horizon"></select>
+            </label>
+            <label>Reward:risk in focus
+              <select id="bn-focus"></select>
+            </label>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Contract</th>
+                <th>Moneyness</th>
+                <th class="num">Premium</th>
+                <th class="num">Time value</th>
+                <th class="num">Delta</th>
+                <th class="num">Volume</th>
+                <th class="num bn-focus"><span id="bn-th-target">Target</span></th>
+                <th class="num bn-focus">Spot needed</th>
+                <th class="num bn-focus">Volume traded there</th>
+                <th class="num bn-focus">Reached first</th>
+                <th class="num bn-focus">IV chance</th>
+                <th class="num">Target it can keep</th>
+              </tr>
+            </thead>
+            <tbody id="bn-body"></tbody>
+          </table>
+        </div>
+
+        <div class="card wide">
+          <h2>What the comparison says</h2>
+          <ul class="event-list" id="bn-read"></ul>
+        </div>
+
+        <div class="card wide">
+          <h2>Read this with the numbers</h2>
+          <ul class="event-list" id="bn-notes"></ul>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============ right-hand selector ============ -->
+  <aside>
+    <div class="panel-modes" role="group" aria-label="What to browse">
+      <button id="mode-stocks" aria-pressed="true">Stocks &amp; Indices</button>
+      <button id="mode-options" aria-pressed="false">Options</button>
+      <button id="mode-bench" aria-pressed="false">Bench</button>
+    </div>
+
+    <div class="panel-controls">
+      <select id="group-select" aria-label="Group"></select>
+      <select id="sort-select" aria-label="Sort">
+        <option value="default">Sort: exchange order</option>
+        <option value="buy">Sort: strongest buy first</option>
+        <option value="sell">Sort: strongest sell first</option>
+        <option value="gainers">Sort: top gainers</option>
+        <option value="losers">Sort: top losers</option>
+      </select>
+      <input id="search" type="search" placeholder="Search name or symbol…" autocomplete="off">
+    </div>
+    <div class="panel-note" id="panel-note"></div>
+
+    <div class="watchlist" id="watchlist"></div>
+  </aside>
+
+  <div class="disclaimer">
+    Signals are computed from delayed public data for study and planning only - this is not investment
+    advice and the app never places an order. Verify on your broker terminal before acting.
+  </div>
+</div>
+
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
