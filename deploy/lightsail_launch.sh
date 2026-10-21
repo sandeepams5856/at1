@@ -13,7 +13,7 @@
 # ============ EDIT THESE BEFORE PASTING =====================================
 # Private repo: put a fine-grained GitHub token with read-only "Contents"
 # access on this one repo in the URL:  https://<TOKEN>@github.com/<you>/at1.git
-REPO_URL="https://github.com/<your-github-user>/at1.git"
+REPO_URL="https://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@github.com/sandeepams5856/at1.git"
 BRANCH="main"
 
 # Optional. Leave both empty for no login. With a password the browser asks
